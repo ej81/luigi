@@ -140,6 +140,10 @@ class Task(object):
     #: task requires 1 unit of the scp resource.
     resources = {}
 
+    #: Batch queue required by the task. If workers are run on a cluster with different queues,
+    #: a worker in a particular queue only processes tasks belonging to the same queue.
+    batch_queue = None
+
     #: Number of seconds after which to time out the run function.
     #: No timeout if set to 0.
     #: Defaults to 0 or worker-timeout value in config file

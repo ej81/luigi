@@ -483,6 +483,12 @@ class Worker(object):
             sudo_user = os.getenv("SUDO_USER")
             if sudo_user:
                 args.append(('sudo_user', sudo_user))
+
+            for queue in ['LSB_QUEUE', 'PBS_QUEUE']:
+                batch_queue = os.getenv(queue)
+                if batch_queue:
+                    args.append(('batch_queue', batch_queue))
+                    break
         except BaseException:
             pass
         return args
@@ -651,6 +657,7 @@ class Worker(object):
         self._add_task(worker=self._id, task_id=task.task_id, status=status,
                        deps=deps, runnable=runnable, priority=task.priority,
                        resources=task.process_resources(),
+                       batch_queue=task.batch_queue,
                        params=task.to_str_params(),
                        family=task.task_family,
                        module=task.task_module)

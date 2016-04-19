@@ -161,8 +161,8 @@ def _get_default(x, default):
 
 class Task(object):
 
-    def __init__(self, task_id, status, deps, resources=None, priority=0, family='', module=None,
-                 params=None, disable_failures=None, disable_window=None, disable_hard_timeout=None,
+    def __init__(self, task_id, status, deps, resources=None, batch_queue=None, priority=0, family='',
+                 module=None, params=None, disable_failures=None, disable_window=None, disable_hard_timeout=None,
                  tracking_url=None, status_message=None):
         self.id = task_id
         self.stakeholders = set()  # workers ids that are somehow related to this task (i.e. don't prune while any of these workers are still active)
@@ -181,6 +181,7 @@ class Task(object):
         self.expl = None
         self.priority = priority
         self.resources = _get_default(resources, {})
+        self.batch_queue = batch_queue
         self.family = family
         self.module = module
         self.params = _get_default(params, {})
@@ -578,8 +579,8 @@ class CentralPlannerScheduler(Scheduler):
 
     def add_task(self, task_id=None, status=PENDING, runnable=True,
                  deps=None, new_deps=None, expl=None, resources=None,
-                 priority=0, family='', module=None, params=None,
-                 assistant=False, tracking_url=None, **kwargs):
+                 batch_queue=None, priority=0, family='', module=None,
+                 params=None, assistant=False, tracking_url=None, **kwargs):
         """
         * add task identified by task_id if it doesn't exist
         * if deps is not None, update dependency list
@@ -593,7 +594,8 @@ class CentralPlannerScheduler(Scheduler):
         if worker_enabled:
             _default_task = self._make_task(
                 task_id=task_id, status=PENDING, deps=deps, resources=resources,
-                priority=priority, family=family, module=module, params=params,
+                batch_queue=batch_queue, priority=priority, family=family,
+                module=module, params=params,
             )
         else:
             _default_task = None
@@ -640,6 +642,9 @@ class CentralPlannerScheduler(Scheduler):
         if resources is not None:
             task.resources = resources
 
+        if batch_queue is not None:
+            task.batch_queue = batch_queue
+
         if worker_enabled and not assistant:
             task.stakeholders.add(worker_id)
 
@@ -651,7 +656,7 @@ class CentralPlannerScheduler(Scheduler):
 
         self._update_priority(task, priority, worker_id)
 
-        if runnable and status != FAILED and worker_enabled:
+        if runnable and status != FAILED and worker_enabled and task.batch_queue == batch_queue:
             task.workers.add(worker_id)
             self._state.get_worker(worker_id).tasks.add(task)
             task.runnable = runnable
@@ -756,6 +761,7 @@ class CentralPlannerScheduler(Scheduler):
             active_workers = self._state.get_active_workers(last_get_work_gt=activity_limit)
             greedy_workers = dict((worker.id, worker.info.get('workers', 1))
                                   for worker in active_workers)
+        batch_queue = worker.info.get('batch_queue', None)
         tasks = list(relevant_tasks)
         tasks.sort(key=self._rank, reverse=True)
 
@@ -786,7 +792,7 @@ class CentralPlannerScheduler(Scheduler):
                     greedy_resources[resource] += amount
 
             if self._schedulable(task) and self._has_resources(task.resources, greedy_resources):
-                if in_workers and self._has_resources(task.resources, used_resources):
+                if in_workers and self._has_resources(task.resources, used_resources) and task.batch_queue == batch_queue:
                     best_task = task
                 else:
                     workers = itertools.chain(task.workers, [worker_id]) if assistant else task.workers
@@ -865,6 +871,7 @@ class CentralPlannerScheduler(Scheduler):
             'name': task.family,
             'priority': task.priority,
             'resources': task.resources,
+            'batch_queue': task.batch_queue,
             'tracking_url': getattr(task, "tracking_url", None),
             'status_message': task.status_message
         }
